@@ -1,6 +1,6 @@
 # MSI Control (msictl) — Panduan Lengkap dari Awal
 
-Tool CLI sederhana untuk mengatur setting laptop MSI (GF63 series) di Linux, tanpa perlu GUI. Panduan ini mencakup **semua langkah dari nol**: install driver kernel `msi-ec`, sampai pakai command `msictl`.
+Tool CLI sederhana untuk mengatur setting laptop MSI di Linux, tanpa perlu GUI. Panduan ini mencakup **semua langkah dari nol**: install driver kernel `msi-ec`, sampai pakai command `msictl`.
 
 Ditulis & ditest di **Ubuntu 22.04 LTS**. Untuk distro lain, sesuaikan nama package manager-nya.
 
