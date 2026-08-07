@@ -1,28 +1,125 @@
-# MSI Control (msictl) — Panduan Penggunaan
+# MSI Control (msictl) — Panduan Lengkap dari Awal
 
-Tool CLI sederhana untuk mengatur setting laptop MSI (GF63) di Linux lewat driver `msi-ec`, tanpa perlu GUI.
+Tool CLI sederhana untuk mengatur setting laptop MSI (GF63 series) di Linux, tanpa perlu GUI. Panduan ini mencakup **semua langkah dari nol**: install driver kernel `msi-ec`, sampai pakai command `msictl`.
 
----
-
-## 📋 Persyaratan
-
-- Driver **msi-ec** sudah terinstall dan aktif
-- Cek dengan:
-  ```bash
-  cat /sys/devices/platform/msi-ec/shift_mode
-  ```
-  Kalau muncul value (bukan "No such file or directory"), driver sudah jalan.
+Ditulis & ditest di **Ubuntu 22.04 LTS**. Untuk distro lain, sesuaikan nama package manager-nya.
 
 ---
 
-## 🔧 Instalasi msictl
+## 🗺️ Alur Besar
+
+1. Install driver `msi-ec` (jembatan antara OS dan Embedded Controller laptop)
+2. Verifikasi driver aktif
+3. Install `msictl` (CLI wrapper biar gampang dipakai)
+4. Mulai atur laptop dari terminal
+
+---
+
+## BAGIAN 1 — Install Driver `msi-ec`
+
+### 1.1 Cek versi kernel
+
+Driver ini butuh **minimal kernel 6.5.0**.
+
+```bash
+uname -r
+```
+
+Kalau versi kamu di bawah 6.5, upgrade dulu pakai HWE kernel (khusus Ubuntu 22.04 LTS):
+
+```bash
+sudo apt install --install-recommends linux-generic-hwe-22.04
+sudo reboot
+```
+
+Setelah reboot, cek lagi dengan `uname -r` sampai versinya 6.5+.
+
+### 1.2 Cek apakah laptop kamu didukung
+
+Lihat daftar device yang sudah tested di halaman [msi-ec discussion #277](https://github.com/BeardOverflow/msi-ec/discussions/277). Kalau laptop kamu nggak ada di daftar, tetap bisa dicoba tapi kemungkinan ada fitur yang nggak berfungsi penuh.
+
+### 1.3 Install dependency build
+
+```bash
+sudo apt update
+sudo apt install build-essential linux-headers-generic dkms
+```
+
+### 1.4 Clone & install driver
+
+```bash
+git clone https://github.com/BeardOverflow/msi-ec
+cd msi-ec
+which dkms                 # pastikan dkms sudah terpasang
+sudo make dkms-install
+sudo reboot
+```
+
+### 1.5 Verifikasi driver aktif
+
+Setelah reboot:
+
+```bash
+cat /sys/devices/platform/msi-ec/shift_mode
+```
+
+- Kalau muncul **"No such file or directory"** → driver belum aktif, cek ulang langkah 1.1–1.4.
+- Kalau muncul value seperti `unspecified`, `comfort`, dll → **driver sudah jalan**, lanjut ke bagian berikutnya.
+
+> Value `unspecified` itu normal kalau mode belum pernah di-set manual sejak boot — bukan error.
+
+### 1.6 (Opsional) Aktifkan `ec_sys` untuk baca temperature & fan speed
+
+```bash
+sudo modprobe ec_sys write_support=1
+lsmod | grep ec_sys
+```
+
+**Kalau muncul error `Operation not permitted`:** kemungkinan besar **Secure Boot** aktif di BIOS, yang memblokir module kernel unsigned. Solusinya:
+
+1. Reboot, masuk BIOS/UEFI (biasanya tombol `Del` atau `F2` saat boot di MSI)
+2. Masuk menu **Security → Secure Boot → Disabled**
+3. Save & Exit, boot ke Ubuntu lagi
+4. Ulangi command `modprobe` di atas
+
+Biar auto-load setiap boot:
+
+```bash
+echo "ec_sys" | sudo tee -a /etc/modules
+echo "options ec_sys write_support=1" | sudo tee /etc/modprobe.d/ec_sys.conf
+```
+
+---
+
+## BAGIAN 2 — Install `msictl`
+
+Setelah driver aktif, kamu punya dua pilihan: pakai command mentah `cat`/`echo` langsung ke sysfs, atau pakai `msictl` — script wrapper yang membungkus semua itu jadi command yang lebih gampang diingat.
+
+### 2.1 Download file
+
+Ambil file `msictl.sh` yang sudah disediakan (satu paket bareng README ini).
+
+### 2.2 Pasang jadi command global
 
 ```bash
 chmod +x msictl.sh
 sudo cp msictl.sh /usr/local/bin/msictl
 ```
 
-Setelah itu, command `msictl` bisa dipanggil dari mana saja di terminal.
+### 2.3 Tes
+
+```bash
+msictl status
+```
+
+Kalau muncul info shift mode, fan mode, temperature, dan battery threshold — instalasi berhasil dan kamu siap pakai.
+
+---
+
+## 📋 Persyaratan (Ringkasan)
+
+- Driver **msi-ec** sudah terinstall dan aktif *(Bagian 1)*
+- Script **msictl** sudah terpasang di `/usr/local/bin/` *(Bagian 2)*
 
 ---
 
@@ -155,12 +252,14 @@ sudo msictl fnkey right   # Fn di kanan, Windows di kiri
 
 ## 🩺 Troubleshooting
 
-**"msi-ec driver not found"**
-Driver belum ke-load. Cek dengan:
-```bash
-lsmod | grep msi_ec
-```
-Kalau kosong, driver belum aktif — perlu reinstall/reload driver `msi-ec`.
+**Driver `msi-ec` tidak terbaca (`cat` menghasilkan "No such file or directory")**
+Ulangi Bagian 1 dari langkah 1.1. Pastikan kernel sudah 6.5+ dan proses `dkms-install` selesai tanpa error, lalu **reboot**.
+
+**`modprobe: ERROR: could not insert 'ec_sys': Operation not permitted`**
+Ini karena Secure Boot aktif. Matikan Secure Boot di BIOS (lihat langkah 1.6), lalu ulangi.
+
+**"msictl: command not found"**
+Script belum ke-copy ke `/usr/local/bin/`, atau belum `chmod +x`. Ulangi Bagian 2.
 
 **Command butuh sudo tapi lupa**
 Tinggal ulangi dengan `sudo` di depan, contoh:
@@ -175,6 +274,9 @@ ls /sys/class/power_supply/
 ```
 Kalau namanya bukan `BAT0`/`BAT1`, mungkin perlu edit script `msictl.sh` bagian deteksi baterai.
 
+**Ingin pakai GUI (MControlCenter) daripada terminal**
+Bisa, tapi di Ubuntu 22.04 biasanya perlu build manual dari source karena versi Qt6 di repo default terlalu lama (butuh Qt 6.4+, cmake 3.25+). Kalau butuh panduan build MControlCenter dari source, tanya terpisah — cukup panjang prosesnya dibanding pakai `msictl` langsung dari terminal.
+
 ---
 
 ## 📌 Quick Reference — Command Sering Dipakai
@@ -186,3 +288,13 @@ sudo msictl mode turbo       # mode gaming/render berat
 sudo msictl battery 0 80     # limit baterai 80% (awetin baterai)
 sudo msictl boost on         # paksa fan maksimal
 ```
+
+---
+
+## 📦 File yang Dibutuhkan
+
+Paket lengkap untuk dikirim ke teman:
+- `README.md` (panduan ini)
+- `msictl.sh` (script CLI-nya)
+
+Dua file ini sudah cukup — tidak perlu install GUI, tidak perlu clone `MControlCenter`, cukup driver `msi-ec` + `msictl`.
